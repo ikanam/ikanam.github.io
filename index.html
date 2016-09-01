@@ -248,6 +248,145 @@
             
               
                 
+                <a class="post-title-link" href="/2016/08/30/2016-08-30/" itemprop="url">
+                  用Action Extension实现Safari的JavaScript注入
+                </a>
+              
+            
+          </h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            <span class="post-meta-item-icon">
+              <i class="fa fa-calendar-o"></i>
+            </span>
+            <span class="post-meta-item-text">发表于</span>
+            <time itemprop="dateCreated" datetime="2016-08-30T13:28:29+08:00" content="2016-08-30">
+              2016-08-30
+            </time>
+          </span>
+
+          
+
+          
+            
+              <span class="post-comments-count">
+                &nbsp; | &nbsp;
+                <a href="/2016/08/30/2016-08-30/#comments" itemprop="discussionUrl">
+                  <span class="post-comments-count ds-thread-count" data-thread-key="2016/08/30/2016-08-30/" itemprop="commentsCount"></span>
+                </a>
+              </span>
+            
+          
+
+          
+
+          
+          
+
+          
+        </div>
+      </header>
+    
+
+
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        
+          
+            <p>关于<code>Action Extension</code>的创建这里不详细说,其实<a href="https://developer.apple.com/library/ios/documentation/General/Conceptual/ExtensibilityPG/ExtensionScenarios.html#//apple_ref/doc/uid/TP40014214-CH21-SW1" target="_blank" rel="external">官方文档</a>已经说得很清楚了,里面也详细介绍了<code>Action Extension</code>和<code>JavaScript</code>如何交互.这里主要是讲讲如何利用官方提供的API来实现对Safari的<code>JavaScript</code>注入以及一些简单的应用.</p>
+<hr>
+<p>先来看看官方文档中的这段话:</p>
+<blockquote>
+<p>In Share extensions (on both platforms) and Action extensions (iOS only), you can give users access to web content by asking Safari to run a JavaScript file and return the results to the extension. You can also use the JavaScript file to access a webpage before your extension runs (on both platforms), <strong>or to access or modify the webpage after your extension completes its task (iOS only)</strong>. </p>
+</blockquote>
+<p>这段话介绍了JavaScript在Share Extension和Action Extension中能有什么作用,其中最有一句提到了,<strong>能在Extension完成任务后访问或修改当前网页</strong>,这就是为什么能让Safari执行任意JavaScript的原因.</p>
+<hr>
+<p>要让Extension访问网页并执行JS,主要有以下步骤:</p>
+<ul>
+<li>首先要创建一个<code>JavaScript</code>文件,格式为<code>.js</code>,并且这个文件必须有一个叫<code>ExtensionPreprocessingJS</code>的全局变量,并将一个实例化的类赋值给它.其实直接照着官方文档的来写就OK了,这里顺便贴一下文档中的js文件代码:</li>
+</ul>
+<figure class="highlight plain"><figcaption><span>MyExtensionJavaScriptClass = function() &#123;&#125;;</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"> </span><br><span class="line">MyExtensionJavaScriptClass.prototype = &#123;</span><br><span class="line">    run: function(arguments) &#123;</span><br><span class="line">    // Pass the baseURI of the webpage to the extension.</span><br><span class="line">        arguments.completionFunction(&#123;&quot;baseURI&quot;: document.baseURI&#125;);</span><br><span class="line">    &#125;,</span><br><span class="line"> </span><br><span class="line">// Note that the finalize function is only available in iOS.</span><br><span class="line">    finalize: function(arguments) &#123;</span><br><span class="line">        // arguments contains the value the extension provides in [NSExtensionContext completeRequestReturningItems:completion:].</span><br><span class="line">    // In this example, the extension provides a color as a returning item.</span><br><span class="line">    document.body.style.backgroundColor = arguments[&quot;bgColor&quot;];</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br><span class="line"> </span><br><span class="line">// The JavaScript file must contain a global object named &quot;ExtensionPreprocessingJS&quot;.</span><br><span class="line">var ExtensionPreprocessingJS = new MyExtensionJavaScriptClass;</span><br></pre></td></tr></table></figure>
+<ul>
+<li>然后info.plist中作如下配置:<br><img src="http://o6p4pvyof.bkt.clouddn.com/2016-09-01-14726938454573.jpg" alt=""></li>
+</ul>
+<p>设置<code>NSExtensionActivationSupportsWebPageWithMaxCount</code>为不为零的值,为了让<code>Extension</code>支持对网页的访问.<br>设置<code>NSExtensionJavaScriptPreprocessingFile</code>为<code>JavaScript</code>文件的名称,不含后缀.图中蓝色框圈住的就是我的<code>JavaScript</code>文件名.</p>
+<ul>
+<li>剩下的事就在<code>ActionViewController</code>和我们的<code>JavaScript</code>文件中去写代码了.</li>
+</ul>
+<hr>
+<h3 id="JavaScript文件分析"><a href="#JavaScript文件分析" class="headerlink" title="JavaScript文件分析:"></a>JavaScript文件分析:</h3><p><img src="http://o6p4pvyof.bkt.clouddn.com/2016-09-01-jsfile.png" alt=""><br>简单来说<code>JavaScript</code>文件中在<code>run()</code>方法中的内容就是<code>Extension</code>执行前,网页会执行的内容,在<code>finalize()</code>方法中就是<code>Extension</code>结束后执行的内容.</p>
+<p>官方的例子中,<code>run()</code>方法中用<code>arguments.completionFunction({&quot;baseURI&quot;: document.baseURI});</code>将网页的<code>baseURI</code>传递给了<code>Extension</code>,然后在<code>finalize()</code>中用<code>document.body.style.backgroundColor = arguments[&quot;bgColor&quot;];</code>通过<code>Extension</code>传递过来的<code>bgColor</code>参数获取到颜色并设置成网页的背景色.</p>
+<h3 id="Controller分析"><a href="#Controller分析" class="headerlink" title="Controller分析:"></a>Controller分析:</h3><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">[imageProvider loadItemForTypeIdentifier:kUTTypePropertyList options:nil completionHandler:^(NSDictionary *item, NSError *error) &#123;</span><br><span class="line"></span><br><span class="line">    NSDictionary *results = (NSDictionary *)item;</span><br><span class="line">    </span><br><span class="line">    NSString *baseURI = [[results objectForKey:NSExtensionJavaScriptPreprocessingResultsKey] objectForKey:@&quot;baseURI&quot;];</span><br><span class="line">        </span><br><span class="line">&#125;];</span><br></pre></td></tr></table></figure>
+<p>上面这段代码是如何获取网页传递过来的<code>baseURI</code>.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">NSExtensionItem *extensionItem = [[NSExtensionItem alloc] init];</span><br><span class="line"></span><br><span class="line">extensionItem.attachments = @[[[NSItemProvider alloc] initWithItem: @&#123;NSExtensionJavaScriptFinalizeArgumentKey: @&#123;@&quot;bgColor&quot;:@&quot;red&quot;&#125;&#125; typeIdentifier:(NSString *)kUTTypePropertyList]];</span><br><span class="line"></span><br><span class="line">[[self extensionContext] completeRequestReturningItems:@[extensionItem] completion:nil];</span><br></pre></td></tr></table></figure>
+<p>上面这段是如何将<code>bgColor</code>传递回网页.</p>
+<h3 id="效果"><a href="#效果" class="headerlink" title="效果:"></a>效果:</h3><p>在Safari中<code>Action Extension</code>栏拖到最后,点击更多,打开自己写的<code>Action Extension</code>开关,点击并运行结束后,页面成功的变成了红色.<br><img src="http://o6p4pvyof.bkt.clouddn.com/2016-09-01-IMG_0062.png" alt=""><br><img src="http://o6p4pvyof.bkt.clouddn.com/2016-09-01-IMG_0064.png" alt=""><br><img src="http://o6p4pvyof.bkt.clouddn.com/2016-09-01-IMG_0065.png" alt=""></p>
+<h3 id="实现任意JavaScript的注入"><a href="#实现任意JavaScript的注入" class="headerlink" title="实现任意JavaScript的注入:"></a>实现任意JavaScript的注入:</h3><p>上面介绍完了<code>Extension</code>和<code>JavaScript</code>交互的一个流程,可以看到<code>JavaScript</code>成功的修改了网页的背景颜色,成功实现了一个注入.但是,这并不能实现我们要注入任意<code>JavaScript</code>的效果,只能执行提前写好在<code>JavaScript</code>文件中的代码.</p>
+<p>要实现执行任意<code>JavaScript</code>代码的注入,需要用的JS中的一个函数<code>eval()</code>,这个函数有个参数位<code>string</code>类型,也就是一个字符串,这个函数的作用就是能执行一段字符串形式的<code>JavaScript</code>代码,有了这个函数,就能轻松的实现任意<code>JavaScript</code>代码的注入需求了.</p>
+<p>来看一下JavaScript文件修改后:<br><img src="http://o6p4pvyof.bkt.clouddn.com/2016-09-01-jsCode.png" alt=""></p>
+<p>然后<code>Controller</code>中回传到网页的代码也要做些修改,我们尝试将<code>alert(&#39;Hello World&#39;);</code>这段<code>JavaScript</code>代码传到网页中去.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">NSExtensionItem *extensionItem = [[NSExtensionItem alloc] init];</span><br><span class="line"></span><br><span class="line">extensionItem.attachments = @[[[NSItemProvider alloc] initWithItem: @&#123;NSExtensionJavaScriptFinalizeArgumentKey: @&#123;@&quot;jsCode&quot; : @&quot;alert(&apos;Hello World&apos;);&quot;&#125;&#125; typeIdentifier:(NSString *)kUTTypePropertyList]];</span><br><span class="line"></span><br><span class="line">[self.extensionContext completeRequestReturningItems:@[extensionItem] completionHandler:nil];</span><br></pre></td></tr></table></figure>
+<p>然后重新运行一下:<br><img src="http://o6p4pvyof.bkt.clouddn.com/2016-09-01-IMG_0066.png" alt=""></p>
+<p>可以看到,<code>alert</code>代码执行了.</p>
+<p>最后,只需要将上面的<code>JavaScript</code>代码当做参数来动态设置,就能实现任意<code>JavaScript</code>代码的执行了.</p>
+<hr>
+<p>我自己也写了一个小程序,来方便的在手机端编写<code>JavaScript</code>代码和在<code>Safari</code>中注入,而且顺便集成了一下Firebug,可以在移动端进行一些网页的简单调试,有兴趣的可以看看.</p>
+<p>项目地址:<a href="https://github.com/JNTian/Extensions-For-Safari" target="_blank" rel="external">https://github.com/JNTian/Extensions-For-Safari</a><br><img src="http://o6p4pvyof.bkt.clouddn.com/2016-09-01-IMG_0067-1.png" alt=""><br><img src="http://o6p4pvyof.bkt.clouddn.com/2016-09-01-IMG_0068.png" alt=""><br><img src="http://o6p4pvyof.bkt.clouddn.com/2016-09-01-IMG_0069.png" alt=""></p>
+
+          
+        
+      
+    </div>
+
+    <div>
+      
+    </div>
+
+    <div>
+      
+    </div>
+
+    <footer class="post-footer">
+      
+
+      
+
+      
+      
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+
+
+    
+      
+
+  
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal " itemscope itemtype="http://schema.org/Article">
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">
+            
+            
+              
+                
                 <a class="post-title-link" href="/2016/03/05/在Storyboard中为UITableView添加Header和Footer/" itemprop="url">
                   在Storyboard中为UITableView添加Header和Footer
                 </a>
@@ -672,7 +811,7 @@ UINavigationController
         <nav class="site-state motion-element">
           <div class="site-state-item site-state-posts">
             <a href="/archives">
-              <span class="site-state-item-count">3</span>
+              <span class="site-state-item-count">4</span>
               <span class="site-state-item-name">日志</span>
             </a>
           </div>
@@ -682,7 +821,7 @@ UINavigationController
           
             <div class="site-state-item site-state-tags">
               <a href="/tags">
-                <span class="site-state-item-count">5</span>
+                <span class="site-state-item-count">7</span>
                 <span class="site-state-item-name">标签</span>
               </a>
             </div>
